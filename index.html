@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Links</title>
+  <style>
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background:#0b0d12;
+      color:#e8ecf6;
+      display:flex;
+      min-height:100vh;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+    }
+    .wrap{
+      width:min(820px, 100%);
+      display:grid;
+      gap:14px;
+    }
+    .card{
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:14px;
+      padding:18px;
+    }
+    h1{
+      margin:0 0 10px;
+      font-size:18px;
+      font-weight:650;
+    }
+    ul{
+      margin:0;
+      padding:0;
+      list-style:none;
+      display:grid;
+      gap:10px;
+    }
+    a{
+      display:block;
+      padding:10px 12px;
+      border-radius:10px;
+      text-decoration:none;
+      color:#e8ecf6;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.10);
+    }
+    a:hover{
+      background:rgba(255,255,255,.10);
+      border-color:rgba(255,255,255,.16);
+    }
+    .hint{
+      margin-top:10px;
+      font-size:12px;
+      opacity:.85;
+    }
+    .row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:10px;
+    }
+    .pill{
+      font-size:12px;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.06);
+      opacity:.9;
+    }
+    textarea{
+      width:100%;
+      min-height:260px;
+      resize:vertical;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(0,0,0,.25);
+      color:#e8ecf6;
+      padding:12px;
+      outline:none;
+      font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      white-space:pre;
+      box-sizing:border-box;
+    }
+    textarea:focus{
+      border-color:rgba(160,200,255,.35);
+      box-shadow:0 0 0 3px rgba(120,170,255,.12);
+    }
+    .btn{
+      cursor:pointer;
+      color:#e8ecf6;
+      background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.14);
+      padding:6px 10px;
+      border-radius:10px;
+      font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    .btn:hover{ background:rgba(255,255,255,.12); }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <h1>Arquivos</h1>
+      <ul>
+        <li><a href="./deepseek.html">deepseek.html</a></li>
+        <li><a href="./gemini.html">gemini.html</a></li>
+        <li><a href="./gpt.html">gpt.html</a></li>
+        <li><a href="./grok.html">grok.html</a></li>
+        <!-- prompt.txt agora é carregado no campo abaixo -->
+        <li><a href="#" id="promptLink">prompt.txt (abrir aqui)</a></li>
+      </ul>
+    </section>
+
+    <section class="card" id="promptCard">
+      <div class="row">
+        <h1 style="margin:0">prompt.txt</h1>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <span class="pill" id="status">Pronto</span>
+          <button class="btn" id="btnReload" type="button">Recarregar</button>
+          <button class="btn" id="btnSelect" type="button">Selecionar tudo</button>
+        </div>
+      </div>
+      <textarea id="promptText" readonly spellcheck="false" placeholder="Clique em “prompt.txt (abrir aqui)” para carregar o conteúdo..."></textarea>
+    </section>
+  </main>
+
+<script>
+(() => {
+  const promptLink = document.getElementById("promptLink");
+  const promptText = document.getElementById("promptText");
+  const statusEl   = document.getElementById("status");
+  const btnReload  = document.getElementById("btnReload");
+  const btnSelect  = document.getElementById("btnSelect");
+
+  const PROMPT_PATH = "./prompt.txt"; // mesmo diretório (UTF-8)
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  async function loadPrompt() {
+    try {
+      setStatus("Carregando...");
+      promptText.value = "";
+
+      // cache: no-store para pegar sempre o arquivo atual
+      const res = await fetch(PROMPT_PATH, { cache: "no-store" });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+
+      // Texto puro (UTF-8). O navegador interpreta corretamente se o servidor enviar charset,
+      // mas para arquivos locais/simples geralmente funciona bem.
+      const text = await res.text();
+      promptText.value = text;
+
+      setStatus(`Carregado (${text.length} chars)`);
+      promptText.focus();
+    } catch (err) {
+      setStatus("Erro ao carregar");
+      promptText.value =
+        "Não foi possível carregar o arquivo prompt.txt.\n\n" +
+        "Possíveis causas:\n" +
+        "1) O arquivo não está no mesmo diretório deste HTML.\n" +
+        "2) Você abriu este HTML via file:// e o navegador bloqueou fetch.\n" +
+        "   Solução: use um servidor local (ex.: extensão Live Server).\n" +
+        "3) Permissões/CORS do servidor.\n\n" +
+        "Detalhe do erro:\n" + String(err);
+      console.error(err);
+    }
+  }
+
+  promptLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    loadPrompt();
+  });
+
+  btnReload.addEventListener("click", loadPrompt);
+
+  btnSelect.addEventListener("click", () => {
+    promptText.focus();
+    promptText.select();
+  });
+
+})();
+</script>
+</body>
+</html>
