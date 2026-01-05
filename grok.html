@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulação de Tecido com Massa-Mola</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        // Configurações da simulação
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const gridWidth = 20; // Número de colunas na malha
+        const gridHeight = 15; // Número de linhas na malha
+        const spacing = 20; // Espaçamento inicial entre pontos
+        const k = 0.05; // Constante da mola (rigidez reduzida para mais fluidez)
+        const damping = 0.98; // Amortecimento leve para oscilações suaves
+        const gravity = 0.05; // Gravidade reduzida para movimento mais lento e fluido
+        const windForce = 0.03; // Força do "vento" do mouse ajustada
+        const tearThreshold = 40; // Distância máxima antes de rasgar
+        const tearSpeedThreshold = 10; // Velocidade mínima do mouse para rasgar
+        const substeps = 8; // Substeps por frame para simulação mais precisa e fluida
+
+        // Arrays para pontos e molas
+        let points = [];
+        let springs = [];
+
+        // Classe para Ponto (massa)
+        class Point {
+            constructor(x, y, fixed = false) {
+                this.x = x;
+                this.y = y;
+                this.oldX = x;
+                this.oldY = y;
+                this.fixed = fixed;
+            }
+
+            update(dt) {
+                if (this.fixed) return;
+                let vx = (this.x - this.oldX) * damping;
+                let vy = (this.y - this.oldY) * damping;
+                this.oldX = this.x;
+                this.oldY = this.y;
+                this.x += vx * dt;
+                this.y += vy * dt + gravity * dt; // Aplicar gravidade ajustada por dt
+            }
+        }
+
+        // Classe para Mola (conexão)
+        class Spring {
+            constructor(p1, p2) {
+                this.p1 = p1;
+                this.p2 = p2;
+                this.length = distance(p1, p2);
+            }
+
+            update(dt) {
+                let dx = this.p2.x - this.p1.x;
+                let dy = this.p2.y - this.p1.y;
+                let dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > tearThreshold) {
+                    return true; // Retorna true se deve ser removida (rasgada)
+                }
+                let force = k * (dist - this.length);
+                let ax = (dx / dist) * force * dt;
+                let ay = (dy / dist) * force * dt;
+                if (!this.p1.fixed) {
+                    this.p1.x += ax;
+                    this.p1.y += ay;
+                }
+                if (!this.p2.fixed) {
+                    this.p2.x -= ax;
+                    this.p2.y -= ay;
+                }
+                return false;
+            }
+        }
+
+        function distance(p1, p2) {
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // Inicializar a malha
+        function init() {
+            points = [];
+            springs = [];
+            for (let y = 0; y < gridHeight; y++) {
+                for (let x = 0; x < gridWidth; x++) {
+                    let fixed = y === 0; // Fixar a linha superior (pendurado)
+                    points.push(new Point(100 + x * spacing, 50 + y * spacing, fixed));
+                }
+            }
+            // Criar molas horizontais e verticais
+            for (let y = 0; y < gridHeight; y++) {
+                for (let x = 0; x < gridWidth; x++) {
+                    if (x < gridWidth - 1) {
+                        springs.push(new Spring(points[y * gridWidth + x], points[y * gridWidth + x + 1]));
+                    }
+                    if (y < gridHeight - 1) {
+                        springs.push(new Spring(points[y * gridWidth + x], points[(y + 1) * gridWidth + x]));
+                    }
+                }
+            }
+        }
+
+        // Variáveis para interação com mouse
+        let mouseX = 0, mouseY = 0;
+        let prevMouseX = 0, prevMouseY = 0;
+        let mouseDown = false;
+        let mouseSpeed = 0;
+
+        canvas.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            if (mouseDown) {
+                let dx = mouseX - prevMouseX;
+                let dy = mouseY - prevMouseY;
+                mouseSpeed = Math.sqrt(dx * dx + dy * dy);
+                prevMouseX = mouseX;
+                prevMouseY = mouseY;
+                tearCloth();
+            }
+        });
+
+        canvas.addEventListener('mousedown', () => {
+            mouseDown = true;
+            prevMouseX = mouseX;
+            prevMouseY = mouseY;
+        });
+
+        canvas.addEventListener('mouseup', () => mouseDown = false);
+
+        // Função para rasgar o tecido
+        function tearCloth() {
+            if (mouseSpeed < tearSpeedThreshold) return;
+            springs = springs.filter(spring => {
+                let midX = (spring.p1.x + spring.p2.x) / 2;
+                let midY = (spring.p1.y + spring.p2.y) / 2;
+                let distToMouse = Math.hypot(midX - mouseX, midY - mouseY);
+                if (distToMouse < 20) {
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        // Atualizar simulação com substeps para fluidez
+        function update() {
+            const dt = 1 / substeps;
+            for (let i = 0; i < substeps; i++) {
+                // Atualizar pontos
+                points.forEach(point => point.update(dt));
+
+                // Atualizar molas e remover rasgadas
+                springs = springs.filter(spring => !spring.update(dt));
+            }
+
+            // Efeito de vento do mouse
+            points.forEach(point => {
+                if (!point.fixed) {
+                    let dx = point.x - mouseX;
+                    let dy = point.y - mouseY;
+                    let dist = Math.hypot(dx, dy);
+                    if (dist < 100) {
+                        let force = windForce * (100 - dist) / 100;
+                        point.x += (dx / dist) * force;
+                        point.y += (dy / dist) * force;
+                    }
+                }
+            });
+        }
+
+        // Desenhar a malha
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            springs.forEach(spring => {
+                ctx.beginPath();
+                ctx.moveTo(spring.p1.x, spring.p1.y);
+                ctx.lineTo(spring.p2.x, spring.p2.y);
+                ctx.stroke();
+            });
+            ctx.fillStyle = '#000';
+            points.forEach(point => {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Loop principal
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        init();
+        loop();
+
+        // Redimensionar canvas
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>

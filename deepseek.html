@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tecido Interativo com Sistema Massa-Mola</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #f1f1f1;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 1200px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            width: 100%;
+        }
+        
+        h1 {
+            font-size: 2.8rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #f27121, #e94057, #8a2387);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            color: #b0b0d0;
+            max-width: 700px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        .canvas-container {
+            position: relative;
+            width: 100%;
+            max-width: 900px;
+            height: 600px;
+            margin-bottom: 30px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 2px solid #333355;
+        }
+        
+        canvas {
+            display: block;
+            background-color: #0d0d1a;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(30, 30, 50, 0.7);
+            border-radius: 12px;
+            width: 100%;
+            max-width: 900px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            min-width: 200px;
+        }
+        
+        .control-group h3 {
+            margin-bottom: 10px;
+            color: #8a2387;
+            font-size: 1.2rem;
+        }
+        
+        label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            margin-bottom: 15px;
+            accent-color: #e94057;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(90deg, #e94057, #8a2387);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            flex: 1;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(233, 64, 87, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(1px);
+        }
+        
+        .instructions {
+            background: rgba(30, 30, 50, 0.7);
+            padding: 20px;
+            border-radius: 12px;
+            max-width: 900px;
+            width: 100%;
+            margin-bottom: 30px;
+        }
+        
+        .instructions h2 {
+            color: #f27121;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+        
+        .instructions ul {
+            padding-left: 20px;
+            line-height: 1.7;
+        }
+        
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        
+        .info {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 900px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: #b0b0d0;
+        }
+        
+        .status {
+            padding: 10px 15px;
+            background: rgba(233, 64, 87, 0.2);
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        
+        .tecido-info {
+            padding: 10px 15px;
+            background: rgba(138, 35, 135, 0.2);
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        
+        .tecido-rasgado {
+            color: #e94057;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+        
+        @media (max-width: 768px) {
+            .canvas-container {
+                height: 450px;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .control-group {
+                width: 100%;
+            }
+            
+            .info {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            h1 {
+                font-size: 2.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Tecido Interativo com Massa-Mola</h1>
+            <p class="subtitle">Simulação física de um tecido usando sistema de partículas conectadas por molas. Interaja com o cursor do mouse para simular vento e arraste rapidamente para rasgar o tecido.</p>
+        </header>
+        
+        <div class="info">
+            <div class="status">Status: <span id="statusText">Interaja com o tecido</span></div>
+            <div class="tecido-info">Molas: <span id="springCount">0</span> | Partículas: <span id="particleCount">0</span> | Rasgos: <span id="tearCount" class="tecido-rasgado">0</span></div>
+        </div>
+        
+        <div class="canvas-container">
+            <canvas id="tecidoCanvas"></canvas>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <h3>Controles Físicos</h3>
+                <label>
+                    <span>Gravidade:</span>
+                    <span id="gravityValue">0.5</span>
+                </label>
+                <input type="range" id="gravitySlider" min="0" max="1" step="0.05" value="0.5">
+                
+                <label>
+                    <span>Rigidez das Molas:</span>
+                    <span id="stiffnessValue">0.1</span>
+                </label>
+                <input type="range" id="stiffnessSlider" min="0.01" max="0.5" step="0.01" value="0.1">
+                
+                <label>
+                    <span>Força do Vento:</span>
+                    <span id="windValue">0.8</span>
+                </label>
+                <input type="range" id="windSlider" min="0.1" max="2" step="0.1" value="0.8">
+            </div>
+            
+            <div class="control-group">
+                <h3>Visualização</h3>
+                <label>
+                    <span>Espessura das Molas:</span>
+                    <span id="thicknessValue">1.5</span>
+                </label>
+                <input type="range" id="thicknessSlider" min="0.5" max="4" step="0.5" value="1.5">
+                
+                <label>
+                    <span>Amortecimento:</span>
+                    <span id="dampingValue">0.95</span>
+                </label>
+                <input type="range" id="dampingSlider" min="0.85" max="0.99" step="0.01" value="0.95">
+                
+                <label>
+                    <span>Limite de Rasgo:</span>
+                    <span id="tearValue">3.0</span>
+                </label>
+                <input type="range" id="tearSlider" min="1.5" max="5" step="0.1" value="3.0">
+            </div>
+            
+            <div class="control-group">
+                <h3>Ações</h3>
+                <div class="buttons">
+                    <button id="resetBtn">Resetar Tecido</button>
+                    <button id="togglePauseBtn">Pausar/Continuar</button>
+                </div>
+                <div class="buttons">
+                    <button id="windLeftBtn">Vento para Esquerda</button>
+                    <button id="windRightBtn">Vento para Direita</button>
+                </div>
+                <div style="margin-top: 20px;">
+                    <label>
+                        <input type="checkbox" id="showGridCheck" checked>
+                        Mostrar Malha
+                    </label>
+                    <label style="margin-left: 15px;">
+                        <input type="checkbox" id="pinTopCheck" checked>
+                        Fixar Topo
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h2>Como Interagir com a Simulação</h2>
+            <ul>
+                <li><strong>Movimente o cursor</strong> próximo ao tecido para simular o efeito do vento</li>
+                <li><strong>Clique e arraste rapidamente</strong> sobre o tecido para rasgá-lo</li>
+                <li><strong>Ajuste os controles deslizantes</strong> para modificar as propriedades físicas</li>
+                <li><strong>Use os botões de vento</strong> para aplicar vento constante em uma direção</li>
+                <li><strong>Pause a simulação</strong> para inspecionar o tecido em detalhes</li>
+                <li><strong>Rasgue o tecido</strong> arrastando o mouse rapidamente através das molas</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Configuração inicial do canvas
+        const canvas = document.getElementById('tecidoCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Ajustar tamanho do canvas
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // Elementos de UI
+        const statusText = document.getElementById('statusText');
+        const springCount = document.getElementById('springCount');
+        const particleCount = document.getElementById('particleCount');
+        const tearCount = document.getElementById('tearCount');
+        const resetBtn = document.getElementById('resetBtn');
+        const togglePauseBtn = document.getElementById('togglePauseBtn');
+        const windLeftBtn = document.getElementById('windLeftBtn');
+        const windRightBtn = document.getElementById('windRightBtn');
+        const showGridCheck = document.getElementById('showGridCheck');
+        const pinTopCheck = document.getElementById('pinTopCheck');
+        
+        // Sliders e seus valores
+        const gravitySlider = document.getElementById('gravitySlider');
+        const stiffnessSlider = document.getElementById('stiffnessSlider');
+        const windSlider = document.getElementById('windSlider');
+        const thicknessSlider = document.getElementById('thicknessSlider');
+        const dampingSlider = document.getElementById('dampingSlider');
+        const tearSlider = document.getElementById('tearSlider');
+        
+        const gravityValue = document.getElementById('gravityValue');
+        const stiffnessValue = document.getElementById('stiffnessValue');
+        const windValue = document.getElementById('windValue');
+        const thicknessValue = document.getElementById('thicknessValue');
+        const dampingValue = document.getElementById('dampingValue');
+        const tearValue = document.getElementById('tearValue');
+        
+        // Parâmetros da simulação
+        let params = {
+            gravity: parseFloat(gravitySlider.value),
+            stiffness: parseFloat(stiffnessSlider.value),
+            windForce: parseFloat(windSlider.value),
+            springThickness: parseFloat(thicknessSlider.value),
+            damping: parseFloat(dampingSlider.value),
+            tearThreshold: parseFloat(tearSlider.value),
+            showGrid: showGridCheck.checked,
+            pinTop: pinTopCheck.checked,
+            isPaused: false
+        };
+        
+        // Atualizar valores dos sliders na UI
+        function updateSliderValues() {
+            gravityValue.textContent = params.gravity.toFixed(2);
+            stiffnessValue.textContent = params.stiffness.toFixed(2);
+            windValue.textContent = params.windForce.toFixed(1);
+            thicknessValue.textContent = params.springThickness.toFixed(1);
+            dampingValue.textContent = params.damping.toFixed(2);
+            tearValue.textContent = params.tearThreshold.toFixed(1);
+        }
+        
+        // Configurar event listeners para sliders
+        gravitySlider.addEventListener('input', function() {
+            params.gravity = parseFloat(this.value);
+            updateSliderValues();
+        });
+        
+        stiffnessSlider.addEventListener('input', function() {
+            params.stiffness = parseFloat(this.value);
+            updateSliderValues();
+        });
+        
+        windSlider.addEventListener('input', function() {
+            params.windForce = parseFloat(this.value);
+            updateSliderValues();
+        });
+        
+        thicknessSlider.addEventListener('input', function() {
+            params.springThickness = parseFloat(this.value);
+            updateSliderValues();
+        });
+        
+        dampingSlider.addEventListener('input', function() {
+            params.damping = parseFloat(this.value);
+            updateSliderValues();
+        });
+        
+        tearSlider.addEventListener('input', function() {
+            params.tearThreshold = parseFloat(this.value);
+            updateSliderValues();
+        });
+        
+        // Configurar checkboxes
+        showGridCheck.addEventListener('change', function() {
+            params.showGrid = this.checked;
+        });
+        
+        pinTopCheck.addEventListener('change', function() {
+            params.pinTop = this.checked;
+        });
+        
+        // Classes para o sistema massa-mola
+        class Particle {
+            constructor(x, y, isPinned = false) {
+                this.x = x;
+                this.y = y;
+                this.prevX = x;
+                this.prevY = y;
+                this.vx = 0;
+                this.vy = 0;
+                this.pinned = isPinned;
+                this.radius = 3;
+                this.mass = 1;
+                this.id = Math.random().toString(36).substring(2, 9);
+            }
+            
+            update(dt) {
+                if (this.pinned) {
+                    this.vx = 0;
+                    this.vy = 0;
+                    return;
+                }
+                
+                // Aplicar gravidade
+                this.vy += params.gravity;
+                
+                // Calcular velocidade a partir da posição anterior
+                this.vx = (this.x - this.prevX) * params.damping;
+                this.vy = (this.y - this.prevY) * params.damping;
+                
+                // Salvar posição atual para o próximo quadro
+                this.prevX = this.x;
+                this.prevY = this.y;
+                
+                // Atualizar posição
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Colisão com as bordas
+                if (this.x < 0) {
+                    this.x = 0;
+                    this.prevX = this.x + this.vx * params.damping;
+                }
+                if (this.x > canvas.width) {
+                    this.x = canvas.width;
+                    this.prevX = this.x + this.vx * params.damping;
+                }
+                if (this.y < 0) {
+                    this.y = 0;
+                    this.prevY = this.y + this.vy * params.damping;
+                }
+                if (this.y > canvas.height) {
+                    this.y = canvas.height;
+                    this.prevY = this.y + this.vy * params.damping;
+                }
+            }
+            
+            applyForce(fx, fy) {
+                if (this.pinned) return;
+                
+                // Aplicar força usando Verlet integration
+                this.x += fx / this.mass;
+                this.y += fy / this.mass;
+            }
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.pinned ? '#f27121' : '#8a2387';
+                ctx.fill();
+                
+                // Adicionar brilho às partículas
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 0.6, 0, Math.PI * 2);
+                ctx.fillStyle = this.pinned ? '#ff9a3c' : '#c24fd6';
+                ctx.fill();
+            }
+        }
+        
+        class Spring {
+            constructor(p1, p2, restLength) {
+                this.p1 = p1;
+                this.p2 = p2;
+                this.restLength = restLength;
+                this.stiffness = params.stiffness;
+                this.id = Math.random().toString(36).substring(2, 9);
+                this.color = '#42a5f5';
+            }
+            
+            update() {
+                // Calcular distância atual entre as partículas
+                const dx = this.p2.x - this.p1.x;
+                const dy = this.p2.y - this.p1.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Verificar se a mola deve se romper
+                if (distance > this.restLength * params.tearThreshold) {
+                    return false; // Mola rompida
+                }
+                
+                // Calcular força da mola (Lei de Hooke)
+                const force = this.stiffness * (distance - this.restLength);
+                const fx = (dx / distance) * force * 0.5;
+                const fy = (dy / distance) * force * 0.5;
+                
+                // Aplicar força às partículas
+                this.p1.applyForce(fx, fy);
+                this.p2.applyForce(-fx, -fy);
+                
+                return true; // Mola intacta
+            }
+            
+            draw() {
+                // Calcular cor baseada na tensão
+                const dx = this.p2.x - this.p1.x;
+                const dy = this.p2.y - this.p1.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const tension = Math.min(1, distance / (this.restLength * 2));
+                
+                // Gradiente de cor baseado na tensão
+                const r = Math.floor(66 + tension * 150); // 66 to 216
+                const g = Math.floor(165 - tension * 100); // 165 to 65
+                const b = Math.floor(245 - tension * 100); // 245 to 145
+                
+                ctx.beginPath();
+                ctx.moveTo(this.p1.x, this.p1.y);
+                ctx.lineTo(this.p2.x, this.p2.y);
+                ctx.lineWidth = params.springThickness;
+                ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+                ctx.stroke();
+            }
+        }
+        
+        // Sistema de tecido
+        class Cloth {
+            constructor(width, height, cols, rows) {
+                this.width = width;
+                this.height = height;
+                this.cols = cols;
+                this.rows = rows;
+                this.particles = [];
+                this.springs = [];
+                this.tears = 0;
+                
+                this.init();
+            }
+            
+            init() {
+                this.particles = [];
+                this.springs = [];
+                this.tears = 0;
+                
+                // Criar partículas
+                const spacingX = this.width / (this.cols - 1);
+                const spacingY = this.height / (this.rows - 1);
+                
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        const x = col * spacingX + (canvas.width - this.width) / 2;
+                        const y = row * spacingY + 50;
+                        
+                        // Fixar partículas da primeira linha
+                        const isPinned = params.pinTop && row === 0;
+                        const particle = new Particle(x, y, isPinned);
+                        this.particles.push(particle);
+                    }
+                }
+                
+                // Criar molas horizontais e verticais
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        const idx = row * this.cols + col;
+                        
+                        // Molas horizontais
+                        if (col < this.cols - 1) {
+                            const spring = new Spring(
+                                this.particles[idx],
+                                this.particles[idx + 1],
+                                spacingX
+                            );
+                            this.springs.push(spring);
+                        }
+                        
+                        // Molas verticais
+                        if (row < this.rows - 1) {
+                            const spring = new Spring(
+                                this.particles[idx],
+                                this.particles[idx + this.cols],
+                                spacingY
+                            );
+                            this.springs.push(spring);
+                        }
+                        
+                        // Molas diagonais (para maior rigidez)
+                        if (col < this.cols - 1 && row < this.rows - 1) {
+                            // Diagonal direita
+                            const spring1 = new Spring(
+                                this.particles[idx],
+                                this.particles[idx + this.cols + 1],
+                                Math.sqrt(spacingX * spacingX + spacingY * spacingY)
+                            );
+                            this.springs.push(spring1);
+                            
+                            // Diagonal esquerda
+                            const spring2 = new Spring(
+                                this.particles[idx + 1],
+                                this.particles[idx + this.cols],
+                                Math.sqrt(spacingX * spacingX + spacingY * spacingY)
+                            );
+                            this.springs.push(spring2);
+                        }
+                    }
+                }
+            }
+            
+            update(dt) {
+                // Atualizar partículas
+                for (const particle of this.particles) {
+                    particle.update(dt);
+                }
+                
+                // Atualizar molas e remover as rompidas
+                const intactSprings = [];
+                for (const spring of this.springs) {
+                    if (spring.update()) {
+                        intactSprings.push(spring);
+                    } else {
+                        this.tears++;
+                    }
+                }
+                this.springs = intactSprings;
+                
+                // Aplicar vento do mouse
+                if (mouse.isActive) {
+                    this.applyMouseWind();
+                }
+                
+                // Aplicar vento constante se ativo
+                if (windForce !== 0) {
+                    this.applyConstantWind();
+                }
+            }
+            
+            draw() {
+                // Desenhar molas
+                if (params.showGrid) {
+                    for (const spring of this.springs) {
+                        spring.draw();
+                    }
+                }
+                
+                // Desenhar partículas
+                for (const particle of this.particles) {
+                    particle.draw();
+                }
+            }
+            
+            applyMouseWind() {
+                const force = params.windForce * 0.5;
+                
+                for (const particle of this.particles) {
+                    // Calcular distância ao mouse
+                    const dx = particle.x - mouse.x;
+                    const dy = particle.y - mouse.y;
+                    const distanceSquared = dx * dx + dy * dy;
+                    
+                    // Aplicar força inversamente proporcional à distância
+                    if (distanceSquared < 10000) { // 100px de raio
+                        const distance = Math.sqrt(distanceSquared);
+                        const strength = Math.max(0, (100 - distance) / 100);
+                        
+                        const forceX = (mouse.vx * force * strength) / particle.mass;
+                        const forceY = (mouse.vy * force * strength) / particle.mass;
+                        
+                        particle.applyForce(forceX, forceY);
+                    }
+                }
+            }
+            
+            applyConstantWind() {
+                for (const particle of this.particles) {
+                    if (!particle.pinned) {
+                        particle.applyForce(windForce * 0.1, 0);
+                    }
+                }
+            }
+            
+            // Verificar e aplicar rasgo com o mouse
+            checkMouseTear() {
+                if (!mouse.isDragging || mouse.dragSpeed < 5) return;
+                
+                for (const spring of this.springs) {
+                    // Calcular ponto mais próximo na mola ao mouse
+                    const A = spring.p1;
+                    const B = spring.p2;
+                    const M = {x: mouse.x, y: mouse.y};
+                    
+                    // Vetores AB e AM
+                    const AB = {x: B.x - A.x, y: B.y - A.y};
+                    const AM = {x: M.x - A.x, y: M.y - A.y};
+                    
+                    // Projeção escalar de AM em AB
+                    const dot = AM.x * AB.x + AM.y * AB.y;
+                    const abLengthSq = AB.x * AB.x + AB.y * AB.y;
+                    
+                    let t = dot / abLengthSq;
+                    t = Math.max(0, Math.min(1, t)); // Limitar entre 0 e 1
+                    
+                    // Ponto mais próximo na mola
+                    const closest = {
+                        x: A.x + AB.x * t,
+                        y: A.y + AB.y * t
+                    };
+                    
+                    // Distância do mouse ao ponto mais próximo
+                    const dx = M.x - closest.x;
+                    const dy = M.y - closest.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Se o mouse está próximo o suficiente, rasgar a mola
+                    if (distance < 15) {
+                        // Marcar a mola para remoção
+                        spring.restLength *= 100; // Tornar a mola extremamente longa
+                        this.tears++;
+                        statusText.textContent = "Rasgando o tecido!";
+                        statusText.style.color = "#e94057";
+                    }
+                }
+            }
+        }
+        
+        // Estado do mouse
+        const mouse = {
+            x: 0,
+            y: 0,
+            prevX: 0,
+            prevY: 0,
+            vx: 0,
+            vy: 0,
+            isActive: false,
+            isDragging: false,
+            dragSpeed: 0
+        };
+        
+        // Vento constante
+        let windForce = 0;
+        
+        // Criar tecido
+        let cloth = new Cloth(500, 400, 20, 16);
+        
+        // Atualizar contadores na UI
+        function updateCounters() {
+            springCount.textContent = cloth.springs.length;
+            particleCount.textContent = cloth.particles.length;
+            tearCount.textContent = cloth.tears;
+            
+            // Atualizar cor do contador de rasgos
+            if (cloth.tears > 0) {
+                tearCount.classList.add('tecido-rasgado');
+            } else {
+                tearCount.classList.remove('tecido-rasgado');
+            }
+        }
+        
+        // Event listeners para mouse
+        canvas.addEventListener('mousemove', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            mouse.prevX = mouse.x;
+            mouse.prevY = mouse.y;
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+            mouse.vx = mouse.x - mouse.prevX;
+            mouse.vy = mouse.y - mouse.prevY;
+            mouse.isActive = true;
+            
+            // Calcular velocidade do arrasto
+            if (mouse.isDragging) {
+                const dx = mouse.x - mouse.prevX;
+                const dy = mouse.y - mouse.prevY;
+                mouse.dragSpeed = Math.sqrt(dx * dx + dy * dy);
+                
+                // Verificar rasgo durante o arrasto
+                cloth.checkMouseTear();
+            }
+            
+            statusText.textContent = "Interagindo com o tecido";
+            statusText.style.color = "#42a5f5";
+        });
+        
+        canvas.addEventListener('mousedown', function(e) {
+            mouse.isDragging = true;
+            mouse.dragSpeed = 0;
+            statusText.textContent = "Arrastando para rasgar";
+            statusText.style.color = "#f27121";
+        });
+        
+        canvas.addEventListener('mouseup', function() {
+            mouse.isDragging = false;
+            mouse.dragSpeed = 0;
+            statusText.textContent = "Interaja com o tecido";
+            statusText.style.color = "#42a5f5";
+        });
+        
+        canvas.addEventListener('mouseleave', function() {
+            mouse.isActive = false;
+            mouse.isDragging = false;
+            mouse.dragSpeed = 0;
+            statusText.textContent = "Interaja com o tecido";
+            statusText.style.color = "#42a5f5";
+        });
+        
+        // Event listeners para botões
+        resetBtn.addEventListener('click', function() {
+            cloth.init();
+            updateCounters();
+            statusText.textContent = "Tecido resetado";
+            statusText.style.color = "#4caf50";
+        });
+        
+        togglePauseBtn.addEventListener('click', function() {
+            params.isPaused = !params.isPaused;
+            togglePauseBtn.textContent = params.isPaused ? "Continuar" : "Pausar";
+            statusText.textContent = params.isPaused ? "Simulação pausada" : "Simulação em execução";
+            statusText.style.color = params.isPaused ? "#ff9800" : "#42a5f5";
+        });
+        
+        windLeftBtn.addEventListener('click', function() {
+            windForce = -params.windForce;
+            statusText.textContent = "Vento para esquerda ativo";
+            statusText.style.color = "#8a2387";
+            
+            // Desativar após 2 segundos
+            setTimeout(() => {
+                if (windForce < 0) windForce = 0;
+            }, 2000);
+        });
+        
+        windRightBtn.addEventListener('click', function() {
+            windForce = params.windForce;
+            statusText.textContent = "Vento para direita ativo";
+            statusText.style.color = "#8a2387";
+            
+            // Desativar após 2 segundos
+            setTimeout(() => {
+                if (windForce > 0) windForce = 0;
+            }, 2000);
+        });
+        
+        // Loop de animação
+        let lastTime = 0;
+        
+        function animate(currentTime) {
+            const dt = currentTime - lastTime || 0;
+            lastTime = currentTime;
+            
+            // Limpar canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Adicionar gradiente de fundo
+            const gradient = ctx.createRadialGradient(
+                canvas.width / 2, canvas.height / 2, 0,
+                canvas.width / 2, canvas.height / 2, canvas.width / 1.5
+            );
+            gradient.addColorStop(0, 'rgba(26, 26, 46, 0.8)');
+            gradient.addColorStop(1, 'rgba(10, 10, 20, 1)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Atualizar e desenhar tecido se não estiver pausado
+            if (!params.isPaused) {
+                cloth.update(dt * 0.01);
+            }
+            cloth.draw();
+            
+            // Atualizar contadores
+            updateCounters();
+            
+            // Solicitar próximo quadro
+            requestAnimationFrame(animate);
+        }
+        
+        // Iniciar animação
+        animate(0);
+        updateSliderValues();
+        updateCounters();
+    </script>
+</body>
+</html>

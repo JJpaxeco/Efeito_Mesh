@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cortina (massa-mola/Verlet) com vento e rasgo</title>
+  <style>
+    html, body { margin: 0; height: 100%; background:#0b0d12; overflow:hidden; }
+    canvas { display:block; width:100vw; height:100vh; }
+    .hud{
+      position:fixed; left:14px; top:14px; z-index:10;
+      color:#e8ecf6; font: 13px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: rgba(10,12,18,.62); border: 1px solid rgba(255,255,255,.12);
+      padding: 10px 12px; border-radius: 12px; backdrop-filter: blur(8px);
+      user-select:none; max-width: 560px;
+    }
+    .hud b{ font-weight: 650; }
+    .hud kbd{
+      font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      padding: 2px 6px; border-radius: 7px;
+      background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.12);
+    }
+    .row{ display:flex; gap:10px; margin-top:8px; flex-wrap: wrap; }
+    button{
+      cursor:pointer; color:#e8ecf6; background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.14);
+      padding: 6px 10px; border-radius: 10px;
+      font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    button:hover{ background: rgba(255,255,255,.12); }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div><b>Cortina / tecido (Verlet + restrições)</b></div>
+    <div>
+      • Mova o cursor (dentro da janela) para “vento”<br>
+      • Clique e arraste para puxar<br>
+      • Arraste <b>muito rápido</b> para rasgar<br>
+      • <kbd>R</kbd> reinicia • <kbd>M</kbd> alterna malha
+    </div>
+    <div class="row">
+      <button id="btnReset">Reiniciar (R)</button>
+      <button id="btnMesh">Alternar malha (M)</button>
+    </div>
+  </div>
+
+  <canvas id="c"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+
+  // ========================
+  // Parâmetros (ajuste fino)
+  // ========================
+  const P = {
+    spacing: 14,            // espaçamento da malha (px)
+    solverIters: 10,        // iterações do solver de restrições
+    damping: 0.992,         // amortecimento (0.98..0.995)
+    gravity: 1400,          // px/s² (não é "por frame")
+    windScale: 0.85,        // intensidade do vento do mouse
+    windRadius: 110,        // raio de influência do vento (px)
+    pullStrength: 0.65,     // quão forte o ponto segue o mouse ao puxar
+    grabRadius: 26,         // raio para agarrar ponto
+    cutRadius: 16,          // raio do rasgo (px)
+    cutSpeed: 1700,         // px/s para "rasgar" ao arrastar rápido
+    autoTearWhenPulling: true,
+    pullTearStretch: 2.4,   // estica acima disso (x) para rasgar (apenas quando puxando)
+    globalBreeze: 0.12      // brisa ambiente (suave)
+  };
+
+  // ========================
+  // Utilitários
+  // ========================
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+  function setSize() {
+    const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+    canvas.width  = Math.floor(innerWidth * dpr);
+    canvas.height = Math.floor(innerHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // Distância de um ponto ao segmento (x1,y1)-(x2,y2)
+  function distPointToSegment(px, py, x1, y1, x2, y2) {
+    const vx = x2 - x1, vy = y2 - y1;
+    const wx = px - x1, wy = py - y1;
+    const c1 = vx*wx + vy*wy;
+    if (c1 <= 0) return Math.hypot(px - x1, py - y1);
+    const c2 = vx*vx + vy*vy;
+    if (c2 <= c1) return Math.hypot(px - x2, py - y2);
+    const t = c1 / c2;
+    const projx = x1 + t*vx, projy = y1 + t*vy;
+    return Math.hypot(px - projx, py - projy);
+  }
+
+  // ========================
+  // Estruturas (Verlet)
+  // ========================
+  class Point {
+    constructor(x, y, pinned=false) {
+      this.x = x; this.y = y;
+      this.ox = x; this.oy = y;  // posição anterior
+      this.ax = 0; this.ay = 0;  // aceleração acumulada
+      this.pinned = pinned;
+      this.px = x; this.py = y;  // posição do pino
+    }
+    pin(x, y){ this.pinned = true; this.px = x; this.py = y; }
+    addForce(fx, fy){ this.ax += fx; this.ay += fy; }
+
+    integrate(dt) {
+      if (this.pinned) {
+        this.x = this.px; this.y = this.py;
+        this.ox = this.x; this.oy = this.y;
+        this.ax = 0; this.ay = 0;
+        return;
+      }
+      const vx = (this.x - this.ox) * P.damping;
+      const vy = (this.y - this.oy) * P.damping;
+
+      const nx = this.x + vx + this.ax * dt * dt;
+      const ny = this.y + vy + this.ay * dt * dt;
+
+      this.ox = this.x; this.oy = this.y;
+      this.x = nx; this.y = ny;
+      this.ax = 0; this.ay = 0;
+    }
+  }
+
+  class Constraint {
+    constructor(a, b, len) {
+      this.a = a; this.b = b;
+      this.len = len;
+      this.dead = false;
+    }
+    satisfy(allowTear, tearStretch) {
+      if (this.dead) return;
+
+      const ax = this.a.x, ay = this.a.y;
+      const bx = this.b.x, by = this.b.y;
+      let dx = bx - ax;
+      let dy = by - ay;
+      const dist = Math.hypot(dx, dy) || 1e-6;
+
+      // Rasgo por esticamento: somente quando "allowTear" (puxando rápido/forte)
+      if (allowTear && dist > this.len * tearStretch) {
+        this.dead = true;
+        return;
+      }
+
+      const diff = (dist - this.len) / dist;
+      const ox = dx * 0.5 * diff;
+      const oy = dy * 0.5 * diff;
+
+      if (!this.a.pinned) { this.a.x += ox; this.a.y += oy; }
+      if (!this.b.pinned) { this.b.x -= ox; this.b.y -= oy; }
+    }
+  }
+
+  // ========================
+  // Malha (cortina)
+  // ========================
+  let points = [];
+  let constraints = [];
+  let cols = 0, rows = 0;
+  let showMesh = true;
+
+  function idx(x, y){ return y * (cols + 1) + x; }
+
+  function buildCloth() {
+    points = [];
+    constraints = [];
+
+    const W = innerWidth, H = innerHeight;
+
+    // Ajuste automático do grid (limitado p/ performance)
+    cols = clamp(Math.floor((W * 0.82) / P.spacing), 24, 88);
+    rows = clamp(Math.floor((H * 0.78) / P.spacing), 18, 70);
+
+    const clothW = cols * P.spacing;
+    const clothH = rows * P.spacing;
+    const startX = (W - clothW) * 0.5;
+    const startY = Math.max(42, H * 0.10);
+
+    // Pontos
+    for (let y = 0; y <= rows; y++) {
+      for (let x = 0; x <= cols; x++) {
+        const px = startX + x * P.spacing;
+        const py = startY + y * P.spacing;
+        const p = new Point(px, py, false);
+
+        // Importante: pinamos TODA a linha superior para não "cair instantaneamente".
+        if (y === 0) p.pin(px, py);
+
+        points.push(p);
+      }
+    }
+
+    // Restrições estruturais
+    for (let y = 0; y <= rows; y++) {
+      for (let x = 0; x <= cols; x++) {
+        if (x < cols) constraints.push(new Constraint(points[idx(x,y)], points[idx(x+1,y)], P.spacing));
+        if (y < rows) constraints.push(new Constraint(points[idx(x,y)], points[idx(x,y+1)], P.spacing));
+      }
+    }
+
+    // Restrições diagonais (shear) + "bending" para estabilidade
+    const diag = Math.hypot(P.spacing, P.spacing);
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        constraints.push(new Constraint(points[idx(x,y)],     points[idx(x+1,y+1)], diag));
+        constraints.push(new Constraint(points[idx(x+1,y)],   points[idx(x,y+1)],   diag));
+      }
+    }
+
+    // Bending (2 passos) — evita que vire "gelatina" e reduz colapsos
+    for (let y = 0; y <= rows; y++) {
+      for (let x = 0; x <= cols; x++) {
+        if (x + 2 <= cols) constraints.push(new Constraint(points[idx(x,y)], points[idx(x+2,y)], P.spacing*2));
+        if (y + 2 <= rows) constraints.push(new Constraint(points[idx(x,y)], points[idx(x,y+2)], P.spacing*2));
+      }
+    }
+  }
+
+  // ========================
+  // Mouse / Pointer
+  // ========================
+  const pointer = {
+    x: 0, y: 0, lx: 0, ly: 0,
+    inside: false,
+    down: false,
+    grabbed: null,
+    lastT: performance.now(),
+    speed: 0
+  };
+
+  function nearestPoint(mx, my, maxDist) {
+    let best = null;
+    let bestD2 = maxDist * maxDist;
+    for (const p of points) {
+      const dx = p.x - mx, dy = p.y - my;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bestD2) { bestD2 = d2; best = p; }
+    }
+    return best;
+  }
+
+  function cutAlongSegment(x1, y1, x2, y2, radius) {
+    for (const c of constraints) {
+      if (c.dead) continue;
+      // corta se algum endpoint estiver perto do segmento do arrasto
+      const da = distPointToSegment(c.a.x, c.a.y, x1, y1, x2, y2);
+      const db = distPointToSegment(c.b.x, c.b.y, x1, y1, x2, y2);
+      if (da < radius || db < radius) c.dead = true;
+    }
+  }
+
+  function onPointerMove(clientX, clientY) {
+    const now = performance.now();
+    const dt = Math.max(1e-3, (now - pointer.lastT) / 1000);
+    pointer.lastT = now;
+
+    pointer.lx = pointer.x; pointer.ly = pointer.y;
+    pointer.x = clientX; pointer.y = clientY;
+
+    const vx = (pointer.x - pointer.lx) / dt;
+    const vy = (pointer.y - pointer.ly) / dt;
+    pointer.speed = Math.hypot(vx, vy);
+
+    // Vento local só se o ponteiro estiver dentro
+    if (pointer.inside) {
+      const r = P.windRadius;
+      const r2 = r*r;
+
+      for (const p of points) {
+        const dx = p.x - pointer.x;
+        const dy = p.y - pointer.y;
+        const d2 = dx*dx + dy*dy;
+        if (d2 < r2) {
+          const fall = 1 - (d2 / r2);
+          // vento direcionado pelo movimento do mouse
+          p.addForce(vx * P.windScale * fall * 0.7, vy * P.windScale * fall * 0.25);
+        }
+      }
+    }
+
+    // Arrasto/puxão
+    if (pointer.down && pointer.grabbed && !pointer.grabbed.pinned) {
+      const p = pointer.grabbed;
+
+      // Puxar suavemente (evita explodir)
+      p.x += (pointer.x - p.x) * P.pullStrength;
+      p.y += (pointer.y - p.y) * P.pullStrength;
+
+      // Rasgo por "arrasto rápido": corta ao longo do segmento do arrasto
+      if (pointer.speed > P.cutSpeed) {
+        cutAlongSegment(pointer.lx, pointer.ly, pointer.x, pointer.y, P.cutRadius);
+      }
+    }
+  }
+
+  // Listeners (Pointer Events)
+  canvas.addEventListener("pointerenter", () => { pointer.inside = true; }, { passive:true });
+  canvas.addEventListener("pointerleave", () => {
+    pointer.inside = false;
+    pointer.down = false;
+    pointer.grabbed = null;
+  }, { passive:true });
+
+  canvas.addEventListener("pointerdown", (e) => {
+    canvas.setPointerCapture?.(e.pointerId);
+    pointer.inside = true;
+    pointer.down = true;
+    pointer.x = pointer.lx = e.clientX;
+    pointer.y = pointer.ly = e.clientY;
+    pointer.lastT = performance.now();
+    pointer.grabbed = nearestPoint(pointer.x, pointer.y, P.grabRadius);
+  }, { passive:true });
+
+  canvas.addEventListener("pointerup", (e) => {
+    pointer.down = false;
+    pointer.grabbed = null;
+    canvas.releasePointerCapture?.(e.pointerId);
+  }, { passive:true });
+
+  canvas.addEventListener("pointermove", (e) => onPointerMove(e.clientX, e.clientY), { passive:true });
+
+  // ========================
+  // Simulação e render
+  // ========================
+  function bounds(p) {
+    const W = innerWidth, H = innerHeight;
+    const pad = 2;
+    p.x = clamp(p.x, pad, W - pad);
+    p.y = clamp(p.y, pad, H - pad);
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = clamp((now - last) / 1000, 1/240, 1/30); // dt em segundos (limitado)
+    last = now;
+
+    const W = innerWidth, H = innerHeight;
+    const t = now * 0.001;
+
+    // Forças e integração
+    for (const p of points) {
+      // Gravidade (correta por tempo)
+      p.addForce(0, P.gravity);
+
+      // Brisa global suave (sempre), sem depender do mouse
+      const breeze = Math.sin(t * 0.9) * P.globalBreeze + Math.sin(t * 2.1) * (P.globalBreeze * 0.6);
+      // influencia mais nos pontos de baixo
+      const depth = p.y / Math.max(1, H);
+      p.addForce(breeze * (250 + 700*depth), 0);
+
+      p.integrate(dt);
+      bounds(p);
+    }
+
+    // Solver de restrições
+    const allowStretchTear = P.autoTearWhenPulling && pointer.down; // só rasga por esticar quando está puxando
+    for (let i = 0; i < P.solverIters; i++) {
+      for (const c of constraints) {
+        c.satisfy(allowStretchTear, P.pullTearStretch);
+      }
+    }
+
+    render(now);
+    requestAnimationFrame(frame);
+  }
+
+  function render(now) {
+    const W = innerWidth, H = innerHeight;
+
+    // Fundo
+    ctx.clearRect(0, 0, W, H);
+    const g = ctx.createRadialGradient(W*0.5, H*0.45, Math.min(W,H)*0.1, W*0.5, H*0.55, Math.max(W,H)*0.8);
+    g.addColorStop(0, "rgba(36, 44, 62, 0.45)");
+    g.addColorStop(1, "rgba(0, 0, 0, 0.78)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // "Varão" da cortina (linha superior)
+    const topY = points[idx(0,0)].y;
+    ctx.strokeStyle = "rgba(220,230,255,0.22)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(points[idx(0,0)].x - 18, topY);
+    ctx.lineTo(points[idx(cols,0)].x + 18, topY);
+    ctx.stroke();
+
+    // Malha
+    if (showMesh) {
+      ctx.strokeStyle = "rgba(210, 226, 255, 0.24)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const c of constraints) {
+        if (c.dead) continue;
+        ctx.moveTo(c.a.x, c.a.y);
+        ctx.lineTo(c.b.x, c.b.y);
+      }
+      ctx.stroke();
+    }
+
+    // Pontinhos (nós) leves
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    for (let i = 0; i < points.length; i += 3) {
+      const p = points[i];
+      ctx.fillRect(p.x - 0.5, p.y - 0.5, 1, 1);
+    }
+
+    // Indicador do cursor
+    if (pointer.inside) {
+      ctx.beginPath();
+      ctx.arc(pointer.x, pointer.y, pointer.down ? 18 : 14, 0, Math.PI*2);
+      ctx.strokeStyle = pointer.down ? "rgba(255,130,130,0.32)" : "rgba(160,200,255,0.18)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Quando muito rápido, mostre “zona de corte”
+      if (pointer.down && pointer.speed > P.cutSpeed) {
+        ctx.beginPath();
+        ctx.arc(pointer.x, pointer.y, P.cutRadius, 0, Math.PI*2);
+        ctx.strokeStyle = "rgba(255,120,120,0.22)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ========================
+  // Controles
+  // ========================
+  function reset() { buildCloth(); }
+  function toggleMesh() { showMesh = !showMesh; }
+
+  document.getElementById("btnReset").addEventListener("click", reset);
+  document.getElementById("btnMesh").addEventListener("click", toggleMesh);
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "r" || e.key === "R") reset();
+    if (e.key === "m" || e.key === "M") toggleMesh();
+  });
+
+  // Resize
+  window.addEventListener("resize", () => {
+    setSize();
+    buildCloth();
+  }, { passive:true });
+
+  // ========================
+  // Init
+  // ========================
+  setSize();
+  buildCloth();
+  requestAnimationFrame((t) => { last = t; requestAnimationFrame(frame); });
+
+})();
+</script>
+</body>
+</html>
